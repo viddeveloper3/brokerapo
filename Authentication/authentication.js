@@ -1,6 +1,7 @@
 const User = require("../Model/userModel");
 const AppError = require("../Utils/AppError");
 const jwt = require("jsonwebtoken");
+const { promisify } = require("util");
 
 const jwtToken = function (id) {
   const token = jwt.sign({ id }, process.env.JWT_KEY, {
@@ -76,28 +77,27 @@ exports.VerifyOTP = async (req, res, next) => {
   }
 };
 
-exports.login = async function (req, res, next) {
+exports.authenticated = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-
-    const user = await User.findOne({ email });
+    let token;
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith("Bearer")
+    ) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+    if (!token) {
+      return next(
+        new AppError("You are not logged in! Please log in to get access.", 401)
+      );
+    }
+    const decoded = await promisify(jwt.verify)(token, process.env.JWT_KEY);
+    const user = await User.findById(decoded.id);
     if (!user) {
-      return next(new AppError("User doesn't exists."));
+      return next(new AppError("User doesn't exist.", 401));
     }
-
-    if (!(await user.checkPassword(user.password, password))) {
-      return next(new AppError("Password is inccorect."));
-    }
-
-    const token = jwtToken(user._id);
-    res.cookie("auth", token, {
-      httpOnly: false,
-      secure: false,
-      maxAge: 24 * 60 * 60 * 1000,
-    });
-    res.status(200).json({
-      status: "sucess",
-      token: token,
+    res.status(202).json({
+      status: "success",
       message: user,
     });
   } catch (err) {
